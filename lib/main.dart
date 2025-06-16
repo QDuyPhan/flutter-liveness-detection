@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'face_detection_page.dart';
 import 'package:camera/camera.dart';
-import 'package:kyc_simulation/views/face_detection_view.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -52,13 +52,9 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Face Detection Demo',
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-      home: const FaceDetectionView(),
+    return const MaterialApp(
+      title: 'Material App',
+      home: HomePage(),
     );
   }
 }
@@ -98,7 +94,7 @@ class HomePage extends StatelessWidget {
                   final result = await Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => const FaceDetectionView(),
+                      builder: (context) => const FaceDetectionPage(),
                     ),
                   );
                   if (result == true) {

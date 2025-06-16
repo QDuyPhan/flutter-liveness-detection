@@ -18,7 +18,14 @@ class FaceDetectionController {
   bool isCameraInitialized = false;
   bool isDetecting = false;
   bool isFrontCamera = true;
-  List<String> challengeActions = ['smile', 'blink', 'lookRight', 'lookLeft'];
+  List<String> challengeActions = [
+    'smile',
+    'blink',
+    'lookRight',
+    'lookLeft',
+    'lookUp',
+    'lookDown'
+  ];
   int currentActionIndex = 0;
   bool waitingForNeutral = false;
 
@@ -26,10 +33,27 @@ class FaceDetectionController {
   double? leftEyeOpenProbability;
   double? rightEyeOpenProbability;
   double? headEulerAngleY;
+  double? headEulerAngleX;
   Rect? faceBoundingBox;
   Size? previewSize;
 
-  // Hàm kiểm tra thiết bị có hỗ trợ imageFormatGroup không
+  // Callbacks
+  final Function(bool) onCameraInitialized;
+  final Function(Face) onFaceDetected;
+  final Function() onNoFaceDetected;
+  final Function(String) onChallengeCompleted;
+  final Function(String) onChallengeFailed;
+
+  FaceDetectionController({
+    required this.onCameraInitialized,
+    required this.onFaceDetected,
+    required this.onNoFaceDetected,
+    required this.onChallengeCompleted,
+    required this.onChallengeFailed,
+  }) {
+    challengeActions.shuffle();
+  }
+
   Future<bool> isImageFormatSupported(
       CameraDescription camera, ImageFormatGroup formatGroup) async {
     CameraController? testController;
@@ -49,29 +73,46 @@ class FaceDetectionController {
     }
   }
 
-  // Initialize the camera controller
   Future<void> initializeCamera() async {
     final cameras = await availableCameras();
     final frontCamera = cameras.firstWhere(
         (camera) => camera.lensDirection == CameraLensDirection.front);
+
     bool yuv420Supported =
         await isImageFormatSupported(frontCamera, ImageFormatGroup.yuv420);
     ImageFormatGroup formatGroup =
         yuv420Supported ? ImageFormatGroup.yuv420 : ImageFormatGroup.unknown;
+
     if (!yuv420Supported) {
       debugPrint('Thiết bị không hỗ trợ YUV420, sẽ thử với format mặc định.');
     }
+
     cameraController = CameraController(
       frontCamera,
       ResolutionPreset.high,
       enableAudio: false,
       imageFormatGroup: formatGroup,
     );
+
     await cameraController.initialize();
     isCameraInitialized = true;
+    onCameraInitialized(true);
+    startFaceDetection();
   }
 
-  // Hàm chuyển đổi CameraImage YUV420 (3 plane) sang NV21 (1 plane)
+  void startFaceDetection() {
+    if (isCameraInitialized) {
+      cameraController.startImageStream((CameraImage image) {
+        if (!isDetecting) {
+          isDetecting = true;
+          detectFaces(image).then((_) {
+            isDetecting = false;
+          });
+        }
+      });
+    }
+  }
+
   Uint8List convertYUV420ToNV21(CameraImage image) {
     final int width = image.width;
     final int height = image.height;
@@ -102,9 +143,7 @@ class FaceDetectionController {
     return nv21;
   }
 
-  // Detect faces in the camera image
-  Future<void> detectFaces(
-      CameraImage image, Function(Face) onFaceDetected) async {
+  Future<void> detectFaces(CameraImage image) async {
     try {
       if (image.format.group != ImageFormatGroup.yuv420) {
         debugPrint('WARNING: CameraImage format is not yuv420!');
@@ -143,8 +182,6 @@ class FaceDetectionController {
       );
 
       final faces = await faceDetector.processImage(inputImage);
-      debugPrint('Number of faces detected: ${faces.length}');
-      app_config.printLog('i', 'Number of faces detected: ${faces.length}');
 
       if (faces.isNotEmpty) {
         final face = faces.first;
@@ -152,24 +189,27 @@ class FaceDetectionController {
         leftEyeOpenProbability = face.leftEyeOpenProbability;
         rightEyeOpenProbability = face.rightEyeOpenProbability;
         headEulerAngleY = face.headEulerAngleY;
+        headEulerAngleX = face.headEulerAngleX;
         faceBoundingBox = face.boundingBox;
+
         onFaceDetected(face);
+        checkChallenge(face);
       } else {
         faceBoundingBox = null;
+        onNoFaceDetected();
       }
     } catch (e) {
       debugPrint('Error in face detection: $e');
     }
   }
 
-  // Check if the face is performing the current challenge action
-  bool checkChallenge(Face face) {
+  void checkChallenge(Face face) {
     if (waitingForNeutral) {
       if (isNeutralPosition(face)) {
         debugPrint('Returned to neutral position');
         waitingForNeutral = false;
       } else {
-        return false;
+        return;
       }
     }
 
@@ -195,23 +235,34 @@ class FaceDetectionController {
         actionCompleted =
             face.headEulerAngleY != null && face.headEulerAngleY! < -20;
         break;
+      case 'lookUp':
+        actionCompleted =
+            face.headEulerAngleX != null && face.headEulerAngleX! < -20;
+        break;
+      case 'lookDown':
+        actionCompleted =
+            face.headEulerAngleX != null && face.headEulerAngleX! > 20;
+        break;
     }
 
     if (actionCompleted) {
+      onChallengeCompleted(currentAction);
       waitingForNeutral = true;
       currentActionIndex++;
       if (currentActionIndex >= challengeActions.length) {
-        return true; // All challenges completed
+        currentActionIndex = 0;
+        challengeActions.shuffle();
       }
     }
-    return false;
   }
 
   bool isNeutralPosition(Face face) {
     return (face.smilingProbability == null ||
             face.smilingProbability! < 0.3) &&
         (face.headEulerAngleY == null ||
-            (face.headEulerAngleY! > -10 && face.headEulerAngleY! < 10));
+            (face.headEulerAngleY! > -10 && face.headEulerAngleY! < 10)) &&
+        (face.headEulerAngleX == null ||
+            (face.headEulerAngleX! > -10 && face.headEulerAngleX! < 10));
   }
 
   void dispose() {
