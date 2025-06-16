@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'face_detection_page.dart';
 import 'package:camera/camera.dart';
+
+import 'face_detection_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
