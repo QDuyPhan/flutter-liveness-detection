@@ -37,56 +37,36 @@ Future<void> processImage(List<Object> args) async {
             final int sensorOrientation = message[1];
             final SendPort sendMsg = message[2];
 
-            // Log chi tiết CameraImage
-            print(
-                '[Debug camera] image.format.group: [33m${image.format.group}[0m');
-            print(
-                '[Debug camera] image.format.raw: [33m${image.format.raw}[0m');
-            print(
-                '[Debug camera] planes.length: [33m${image.planes.length}[0m');
-            for (int i = 0; i < image.planes.length; i++) {
-              print(
-                  '[Debug camera] plane[$i] bytes.length: ${image.planes[i].bytes.length}, bytesPerRow: ${image.planes[i].bytesPerRow}, bytesPerPixel: ${image.planes[i].bytesPerPixel}');
-            }
-            print(
-                '[Debug camera] width: ${image.width}, height: ${image.height}');
-            print('[Debug camera] sensorOrientation: $sensorOrientation');
-
-            // Tính toán rotation
-            InputImageRotation rotation;
-            switch (sensorOrientation) {
-              case 0:
-                rotation = InputImageRotation.rotation0deg;
-                break;
-              case 90:
-                rotation = InputImageRotation.rotation90deg;
-                break;
-              case 180:
-                rotation = InputImageRotation.rotation180deg;
-                break;
-              case 270:
-                rotation = InputImageRotation.rotation270deg;
-                break;
-              default:
-                rotation = InputImageRotation.rotation0deg;
+            InputImageFormat? inputImageFormat =
+                InputImageFormatValue.fromRawValue(image.format.raw);
+            if (inputImageFormat == null ||
+                (Platform.isAndroid &&
+                    inputImageFormat != InputImageFormat.nv21) ||
+                (Platform.isIOS &&
+                    inputImageFormat != InputImageFormat.bgra8888)) {
+              continue;
             }
 
-            // Truyền trực tiếp 3 planes vào InputImage (YUV420)
-            Uint8List allBytes = concatenatePlanes(image.planes);
+            if (image.planes.length != 1) {
+              continue;
+            }
+
+            Plane plane = image.planes.first;
+
             InputImage inputImage = InputImage.fromBytes(
-              bytes: allBytes,
+              bytes: plane.bytes,
               metadata: InputImageMetadata(
                 size: Size(image.width.toDouble(), image.height.toDouble()),
-                rotation: rotation,
-                format: InputImageFormat.yuv_420_888,
-                bytesPerRow: image.planes[0].bytesPerRow,
+                format: inputImageFormat,
+                bytesPerRow: plane.bytesPerRow,
+                rotation: InputImageRotation.rotation0deg,
               ),
             );
 
             List<Face> faces = await _faceDetector.processImage(inputImage);
-            print('[Debug camera] faces : [32m${faces.length}[0m');
-            // decodeNV21 có thể không dùng được nữa, bạn có thể bỏ qua hoặc sửa lại nếu cần
-            sendMsg.send([faces, null]);
+            print('[Debug camera] faces : ${faces.length}');
+            imglib.Image img = decodeNV21(inputImage);
+            sendMsg.send([faces, img]);
           }
         }
       }
@@ -96,12 +76,44 @@ Future<void> processImage(List<Object> args) async {
   }
 }
 
-Uint8List concatenatePlanes(List<Plane> planes) {
-  final WriteBuffer allBytes = WriteBuffer();
-  for (Plane plane in planes) {
-    allBytes.putUint8List(plane.bytes);
+imglib.Image decodeNV21(InputImage image) {
+  final width = image.metadata!.size.width.toInt();
+  final height = image.metadata!.size.height.toInt();
+
+  Uint8List yuv420sp = image.bytes!;
+
+  final outImg = imglib.Image(width: width, height: height);
+
+  final int frameSize = width * height;
+
+  for (int j = 0, yp = 0; j < height; j++) {
+    int uvp = frameSize + (j >> 1) * width, u = 0, v = 0;
+    for (int i = 0; i < width; i++, yp++) {
+      int y = (0xff & yuv420sp[yp]) - 16;
+      if (y < 0) y = 0;
+      if ((i & 1) == 0) {
+        v = (0xff & yuv420sp[uvp++]) - 128;
+        u = (0xff & yuv420sp[uvp++]) - 128;
+      }
+      int y1192 = 1192 * y;
+      int r = (y1192 + 1634 * v);
+      int g = (y1192 - 833 * v - 400 * u);
+      int b = (y1192 + 2066 * u);
+
+      r = r.clamp(0, 262143);
+      g = g.clamp(0, 262143);
+      b = b.clamp(0, 262143);
+
+      outImg.setPixelRgb(
+        i,
+        j,
+        ((r << 6) & 0xff0000) >> 16,
+        ((g >> 2) & 0xff00) >> 8,
+        (b >> 10) & 0xff,
+      );
+    }
   }
-  return allBytes.done().buffer.asUint8List();
+  return outImg;
 }
 
 class APICamera {

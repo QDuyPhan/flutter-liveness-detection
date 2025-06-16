@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:kyc_simulation/app_config.dart';
 import 'package:kyc_simulation/face_detection_controller.dart';
+import 'dart:ui';
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 
 class FaceDetectionPage extends StatefulWidget {
   const FaceDetectionPage({super.key});
@@ -12,66 +15,62 @@ class FaceDetectionPage extends StatefulWidget {
 }
 
 class _FaceDetectionPageState extends State<FaceDetectionPage> {
-  late FaceDetectionController _controller;
+  late APIFace _apiFace;
   bool isCameraInitialized = false;
-  double? smilingProbability;
-  double? leftEyeOpenProbability;
-  double? rightEyeOpenProbability;
-  double? headEulerAngleY;
-  double? headEulerAngleX;
+  Face? _mainFace;
   Rect? faceBoundingBox;
   Size? previewSize;
-  String currentAction = '';
-  bool waitingForNeutral = false;
+  StreamSubscription? _faceStreamSub;
 
   @override
   void initState() {
     super.initState();
-    _controller = FaceDetectionController(
-      onCameraInitialized: (initialized) {
-        setState(() {
-          isCameraInitialized = initialized;
-        });
-      },
-      onFaceDetected: (face) {
-        setState(() {
-          smilingProbability = face.smilingProbability;
-          leftEyeOpenProbability = face.leftEyeOpenProbability;
-          rightEyeOpenProbability = face.rightEyeOpenProbability;
-          headEulerAngleY = face.headEulerAngleY;
-          headEulerAngleX = face.headEulerAngleX;
-          faceBoundingBox = face.boundingBox;
-        });
-      },
-      onNoFaceDetected: () {
-        setState(() {
-          faceBoundingBox = null;
-        });
-      },
-      onChallengeCompleted: (action) {
-        setState(() {
-          currentAction = action;
-          waitingForNeutral = true;
-        });
-      },
-      onChallengeFailed: (action) {
-        setState(() {
-          currentAction = action;
-        });
-      },
-    );
-    _controller.initializeCamera();
+    _apiFace = APIFace();
+    _apiFace.init(RootIsolateToken.instance!);
+    _apiFace.start().then((_) {
+      setState(() {
+        isCameraInitialized = true;
+      });
+    });
+    _faceStreamSub =
+        _apiFace.camera.streamDectectFaceController.stream.listen((event) {
+      if (event is List && event[0] is List<Face> && event[1] != null) {
+        final List<Face> faces = event[0];
+        if (faces.isNotEmpty) {
+          // Lấy khuôn mặt lớn nhất (theo width)
+          Face mainFace = faces.reduce(
+              (a, b) => a.boundingBox.width > b.boundingBox.width ? a : b);
+          setState(() {
+            _mainFace = mainFace;
+            faceBoundingBox = mainFace.boundingBox;
+            // previewSize sẽ lấy từ cameraController
+            if (_apiFace.camera.controller != null &&
+                _apiFace.camera.controller!.value.isInitialized) {
+              previewSize = _apiFace.camera.controller!.value.previewSize;
+            }
+          });
+        } else {
+          setState(() {
+            _mainFace = null;
+            faceBoundingBox = null;
+          });
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _faceStreamSub?.cancel();
+    _apiFace.stop();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!isCameraInitialized) {
+    if (!isCameraInitialized ||
+        _apiFace.camera.controller == null ||
+        !_apiFace.camera.controller!.value.isInitialized) {
       return const Scaffold(
         body: Center(
           child: CircularProgressIndicator(),
@@ -85,12 +84,12 @@ class _FaceDetectionPageState extends State<FaceDetectionPage> {
       ),
       body: Stack(
         children: [
-          CameraPreview(_controller.cameraController),
-          if (faceBoundingBox != null)
+          CameraPreview(_apiFace.camera.controller!),
+          if (faceBoundingBox != null && previewSize != null)
             CustomPaint(
               painter: FaceDetectorPainter(
                 faceBoundingBox!,
-                _controller.cameraController.value.previewSize!,
+                previewSize!,
               ),
             ),
           Positioned(
@@ -104,40 +103,23 @@ class _FaceDetectionPageState extends State<FaceDetectionPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    'Current Action: ${_getActionText(currentAction)}',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  if (waitingForNeutral)
-                    const Text(
-                      'Please return to neutral position',
-                      style: TextStyle(
-                        color: Colors.yellow,
-                        fontSize: 16,
-                      ),
-                    ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Smile: ${_formatProbability(smilingProbability)}',
+                    'Smile: ${_formatProbability(_mainFace?.smilingProbability)}',
                     style: const TextStyle(color: Colors.white),
                   ),
                   Text(
-                    'Left Eye: ${_formatProbability(leftEyeOpenProbability)}',
+                    'Left Eye: ${_formatProbability(_mainFace?.leftEyeOpenProbability)}',
                     style: const TextStyle(color: Colors.white),
                   ),
                   Text(
-                    'Right Eye: ${_formatProbability(rightEyeOpenProbability)}',
+                    'Right Eye: ${_formatProbability(_mainFace?.rightEyeOpenProbability)}',
                     style: const TextStyle(color: Colors.white),
                   ),
                   Text(
-                    'Head Angle Y: ${_formatAngle(headEulerAngleY)}',
+                    'Head Angle Y: ${_formatAngle(_mainFace?.headEulerAngleY)}',
                     style: const TextStyle(color: Colors.white),
                   ),
                   Text(
-                    'Head Angle X: ${_formatAngle(headEulerAngleX)}',
+                    'Head Angle X: ${_formatAngle(_mainFace?.headEulerAngleX)}',
                     style: const TextStyle(color: Colors.white),
                   ),
                 ],
@@ -147,25 +129,6 @@ class _FaceDetectionPageState extends State<FaceDetectionPage> {
         ],
       ),
     );
-  }
-
-  String _getActionText(String action) {
-    switch (action) {
-      case 'smile':
-        return 'Smile';
-      case 'blink':
-        return 'Blink';
-      case 'lookRight':
-        return 'Look Right';
-      case 'lookLeft':
-        return 'Look Left';
-      case 'lookUp':
-        return 'Look Up';
-      case 'lookDown':
-        return 'Look Down';
-      default:
-        return 'Waiting...';
-    }
   }
 
   String _formatProbability(double? probability) {
