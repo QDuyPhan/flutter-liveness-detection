@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:image/image.dart' as imglib;
 
+import 'app_config.dart';
+
 @pragma('vm:entry-point')
 Future<void> processImage(List<Object> args) async {
   try {
@@ -84,7 +86,35 @@ Future<void> processImage(List<Object> args) async {
             );
 
             List<Face> faces = await _faceDetector.processImage(inputImage);
-            print('[Debug camera] faces : [32m${faces.length}[0m');
+            print('[Debug camera] faces :${faces.length}');
+            if (faces.isNotEmpty) {
+              app_config.printLog("i", 'Detected ${faces.length} face(s)');
+              for (var i = 0; i < faces.length; i++) {
+                final face = faces.first;
+                app_config.printLog("i", 'Face $i:');
+                app_config.printLog("i", '  Bounding box: ${face.boundingBox}');
+                app_config.printLog(
+                  "i",
+                  '  Head Euler Angle X: ${face.headEulerAngleX}',
+                );
+                app_config.printLog(
+                  "i",
+                  '  Head Euler Angle Y: ${face.headEulerAngleY}',
+                );
+                app_config.printLog(
+                  "i",
+                  '  Head Euler Angle Z: ${face.headEulerAngleZ}',
+                );
+                if (face.contours.isNotEmpty) {
+                  app_config.printLog(
+                    "i",
+                    '  Contours detected: ${face.contours.keys.length} types',
+                  );
+                }
+              }
+            } else {
+              app_config.printLog("i", 'No faces detected.');
+            }
             // decodeNV21 có thể không dùng được nữa, bạn có thể bỏ qua hoặc sửa lại nếu cần
             sendMsg.send([faces, null]);
           }
