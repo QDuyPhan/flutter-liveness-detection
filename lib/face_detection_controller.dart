@@ -184,6 +184,35 @@ class FaceDetectionController {
       final faces = await faceDetector.processImage(inputImage);
 
       if (faces.isNotEmpty) {
+        app_config.printLog("i", 'Detected ${faces.length} face(s):');
+        for (var i = 0; i < faces.length; i++) {
+          final face = faces[i];
+          app_config.printLog("i", 'Face $i:');
+          app_config.printLog("i", '  Bounding box: ${face.boundingBox}');
+          app_config.printLog(
+            "i",
+            '  Head Euler Angle X: ${face.headEulerAngleX}',
+          );
+          app_config.printLog(
+            "i",
+            '  Head Euler Angle Y: ${face.headEulerAngleY}',
+          );
+          app_config.printLog(
+            "i",
+            '  Head Euler Angle Z: ${face.headEulerAngleZ}',
+          );
+          if (face.contours.isNotEmpty) {
+            app_config.printLog(
+              "i",
+              '  Contours detected: ${face.contours.keys.length} types',
+            );
+          }
+        }
+      } else {
+        app_config.printLog("i", 'No faces detected.');
+      }
+
+      if (faces.isNotEmpty) {
         final face = faces.first;
         smilingProbability = face.smilingProbability;
         leftEyeOpenProbability = face.leftEyeOpenProbability;
