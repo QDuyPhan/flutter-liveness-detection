@@ -1,13 +1,12 @@
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:camera/camera.dart';
 
 import 'face_detection_page.dart';
 
 /// NHÁNH MAIN
-/// XIAOMI nhận được khuôn mặt và log ra được đã nhận đươc trên giao diện
-/// TABLET vẫn nhận được cả giao diện và log trên tablet
+/// nhận diện được khuôn mặt được cả trên xiaomi và tablet
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
