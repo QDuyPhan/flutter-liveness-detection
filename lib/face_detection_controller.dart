@@ -10,6 +10,7 @@ class FaceDetectionController {
       enableContours: true,
       enableClassification: true,
       enableTracking: true,
+      enableLandmarks: true,
       performanceMode: FaceDetectorMode.accurate,
     ),
   );
@@ -113,6 +114,10 @@ class FaceDetectionController {
     }
   }
 
+  /// chuyển YUV420 thành NV21
+  /// Chuyển CameraImage từ YUV420 sang NV21 format (Uint8List)
+  /// để dùng với thư viện xử lý ảnh như mlkit, tflite, hoặc native Android.
+  /// Cần detect face / send image cho model
   Uint8List convertYUV420ToNV21(CameraImage image) {
     final int width = image.width;
     final int height = image.height;
@@ -143,6 +148,45 @@ class FaceDetectionController {
     return nv21;
   }
 
+  Uint8List convertYUV420ToNV21Safe(CameraImage image) {
+    final int width = image.width;
+    final int height = image.height;
+
+    final int ySize = width * height;
+    final int uvSize = width * height ~/ 2;
+    final Uint8List nv21 = Uint8List(ySize + uvSize);
+
+    final Uint8List yPlane = image.planes[0].bytes;
+    final Uint8List uPlane = image.planes[1].bytes;
+    final Uint8List vPlane = image.planes[2].bytes;
+
+    final int yRowStride = image.planes[0].bytesPerRow;
+
+    // Copy Y plane
+    int destIndex = 0;
+    for (int row = 0; row < height; row++) {
+      final int srcIndex = row * yRowStride;
+      nv21.setRange(destIndex, destIndex + width, yPlane, srcIndex);
+      destIndex += width;
+    }
+
+    final int uvRowStride = image.planes[1].bytesPerRow;
+    final int uvPixelStride = image.planes[1].bytesPerPixel!;
+
+    // Interleave V and U planes to NV21 format (VU VU VU...)
+    int uvStartIndex = ySize;
+    for (int row = 0; row < height ~/ 2; row++) {
+      for (int col = 0; col < width ~/ 2; col++) {
+        final int uvIndex = row * uvRowStride + col * uvPixelStride;
+        nv21[uvStartIndex++] = vPlane[uvIndex]; // V
+        nv21[uvStartIndex++] = uPlane[uvIndex]; // U
+      }
+    }
+
+    return nv21;
+  }
+
+
   Future<void> detectFaces(CameraImage image) async {
     try {
       if (image.format.group != ImageFormatGroup.yuv420) {
@@ -151,7 +195,7 @@ class FaceDetectionController {
         return;
       }
 
-      final nv21 = convertYUV420ToNV21(image);
+      final nv21 = convertYUV420ToNV21Safe(image);
 
       InputImageRotation rotation;
       switch (cameraController.description.sensorOrientation) {
