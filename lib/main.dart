@@ -5,8 +5,9 @@ import 'package:camera/camera.dart';
 
 import 'face_detection_page.dart';
 
-/// vẫn nhaận được khuôn mặt nhưng kh in trên giao diện chỉ log ở đt xiaomi
-/// vẫn nhậndduocuocjw cả giao diện và log trên tablet
+/// NHÁNH MAIN
+/// XIAOMI nhận được khuôn mặt và log ra được đã nhận đươc trên giao diện
+/// TABLET vẫn nhận được cả giao diện và log trên tablet
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
